@@ -1,4 +1,5 @@
 import { useState } from "react";
+import React from "react";
 
 const SUPABASE_URL = "https://ektichcptphekmkhibde.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVrdGljaGNwdHBoZWtta2hpYmRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1NjU4MDAsImV4cCI6MjA4ODE0MTgwMH0.xbtKl33uVx6KaZd-gxxcUeJqslITWX2b_tfhYhzQDjE";
@@ -132,6 +133,94 @@ function Radio({ label, value, onChange, options }) {
         ))}
       </div>
     </Field>
+  );
+}
+
+// ── SIGNATURE PAD ─────────────────────────────────────────────────────────────
+function SignaturePad({ onSave, value, error, color }) {
+  const canvasRef = React.useRef(null);
+  const drawing = React.useRef(false);
+  const [signed, setSigned] = React.useState(false);
+
+  const getPos = (e, canvas) => {
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  };
+
+  const startDraw = (e) => {
+    e.preventDefault();
+    drawing.current = true;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    const pos = getPos(e, canvas);
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
+  };
+
+  const draw = (e) => {
+    e.preventDefault();
+    if (!drawing.current) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    ctx.strokeStyle = color || "#c9a84c";
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    const pos = getPos(e, canvas);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+    setSigned(true);
+  };
+
+  const stopDraw = (e) => {
+    e.preventDefault();
+    drawing.current = false;
+    if (signed) {
+      const dataUrl = canvasRef.current.toDataURL("image/png");
+      onSave(dataUrl);
+    }
+  };
+
+  const clear = () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setSigned(false);
+    onSave("");
+  };
+
+  return (
+    <div>
+      <div style={{ position: "relative", border: `1.5px solid ${error ? ERROR : signed ? color : BORDER}`, borderRadius: 6, background: "#080706", overflow: "hidden", transition: "border-color 0.15s" }}>
+        <canvas
+          ref={canvasRef}
+          width={560}
+          height={120}
+          style={{ width: "100%", height: 120, display: "block", touchAction: "none" }}
+          onMouseDown={startDraw}
+          onMouseMove={draw}
+          onMouseUp={stopDraw}
+          onMouseLeave={stopDraw}
+          onTouchStart={startDraw}
+          onTouchMove={draw}
+          onTouchEnd={stopDraw}
+        />
+        {!signed && (
+          <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontSize: 12, color: "#2a2820", pointerEvents: "none", whiteSpace: "nowrap" }}>
+            ✍️ Sign here with your finger or mouse
+          </div>
+        )}
+        {signed && (
+          <button onClick={clear} style={{ position: "absolute", top: 6, right: 6, background: "#1a1814", border: `1px solid ${BORDER}`, borderRadius: 4, color: MUTED, fontSize: 10, padding: "3px 8px", cursor: "pointer" }}>
+            Clear
+          </button>
+        )}
+      </div>
+      {error && <div style={{ color: ERROR, fontSize: 10, marginTop: 3 }}>Signature required</div>}
+      {signed && <div style={{ fontSize: 9, color: "#3a3028", marginTop: 4 }}>Signed electronically · {new Date().toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" })}</div>}
+    </div>
   );
 }
 
@@ -462,22 +551,24 @@ export default function JobSheet() {
             </div>
             <Input label="Client Supervisor Name" value={sheet.supervisorName} onChange={set("supervisorName")} required err={errors.supervisorName} placeholder="Jane Smith" />
             <Field label="Client Supervisor Signature *">
-              <input value={sheet.supervisorSignature} onChange={e => set("supervisorSignature")(e.target.value)}
-                placeholder="Type full legal name to sign electronically"
-                style={{ ...inp(errors.supervisorSignature), fontSize: 16, fontFamily: "'Barlow Condensed', sans-serif", color: GOLD, letterSpacing: "0.02em" }} />
-              {errors.supervisorSignature && <div style={{ color: ERROR, fontSize: 10, marginTop: 3 }}>Required</div>}
-              {sheet.supervisorSignature && <div style={{ fontSize: 9, color: "#3a3028", marginTop: 4 }}>Signed electronically · {new Date().toLocaleDateString("en-CA", { year:"numeric", month:"long", day:"numeric" })}</div>}
+              <SignaturePad
+                onSave={(dataUrl) => set("supervisorSignature")(dataUrl)}
+                value={sheet.supervisorSignature}
+                error={errors.supervisorSignature}
+                color={GOLD}
+              />
             </Field>
           </div>
 
           <div style={section}>
             <div style={sectionTitle}>✍️ LUMPER LEAD SIGN OFF</div>
             <Field label="Lead Lumper Signature *">
-              <input value={sheet.lumperSignature} onChange={e => set("lumperSignature")(e.target.value)}
-                placeholder="Type full legal name to sign electronically"
-                style={{ ...inp(errors.lumperSignature), fontSize: 16, fontFamily: "'Barlow Condensed', sans-serif", color: GOLD, letterSpacing: "0.02em" }} />
-              {errors.lumperSignature && <div style={{ color: ERROR, fontSize: 10, marginTop: 3 }}>Required</div>}
-              {sheet.lumperSignature && <div style={{ fontSize: 9, color: "#3a3028", marginTop: 4 }}>Signed electronically · {new Date().toLocaleDateString("en-CA", { year:"numeric", month:"long", day:"numeric" })}</div>}
+              <SignaturePad
+                onSave={(dataUrl) => set("lumperSignature")(dataUrl)}
+                value={sheet.lumperSignature}
+                error={errors.lumperSignature}
+                color="#4a9eff"
+              />
             </Field>
           </div>
 
