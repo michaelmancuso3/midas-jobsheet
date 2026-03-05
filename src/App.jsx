@@ -246,15 +246,15 @@ export default function JobSheet() {
       if (!res.ok) throw new Error(await res.text());
       const [saved] = await res.json();
 
-      // Call Edge Function directly to send invoice
-      await fetch(`${SUPABASE_URL}/functions/v1/send-invoice`, {
+      // Call Edge Function to send invoice — non-blocking, won't fail submission
+      fetch(`${SUPABASE_URL}/functions/v1/send-invoice`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
         },
         body: JSON.stringify({ record: saved }),
-      });
+      }).catch(e => console.error("Invoice email failed:", e));
 
       setStep(3);
     } catch (err) {
