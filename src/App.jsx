@@ -1,9 +1,9 @@
 import { useState } from "react";
 
-// ── CONFIG ────────────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://ektichcptphekmkhibde.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVrdGljaGNwdHBoZWtta2hpYmRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1NjU4MDAsImV4cCI6MjA4ODE0MTgwMH0.xbtKl33uVx6KaZd-gxxcUeJqslITWX2b_tfhYhzQDjE";
 const SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVrdGljaGNwdHBoZWtta2hpYmRlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MjU2NTgwMCwiZXhwIjoyMDg4MTQxODAwfQ.rbPtqYnY38WI5cBJpZ76m6NAT7lV_GsCv_4NKx-RxNA";
+
 const supabase = {
   async insert(table, data) {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
@@ -251,7 +251,7 @@ export default function JobSheet() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+          "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
         },
         body: JSON.stringify({ record: saved }),
       });
