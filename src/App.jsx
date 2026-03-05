@@ -3,7 +3,7 @@ import { useState } from "react";
 // ── CONFIG ────────────────────────────────────────────────────────────────────
 const SUPABASE_URL = "YOUR_SUPABASE_URL";
 const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
-
+const SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVrdGljaGNwdHBoZWtta2hpYmRlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MjU2NTgwMCwiZXhwIjoyMDg4MTQxODAwfQ.rbPtqYnY38WI5cBJpZ76m6NAT7lV_GsCv_4NKx-RxNA";
 const supabase = {
   async insert(table, data) {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
