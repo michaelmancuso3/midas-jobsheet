@@ -1,8 +1,8 @@
 import { useState } from "react";
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
-const SUPABASE_URL = "YOUR_SUPABASE_URL";
-const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+const SUPABASE_URL = "https://ektichcptphekmkhibde.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVrdGljaGNwdHBoZWtta2hpYmRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1NjU4MDAsImV4cCI6MjA4ODE0MTgwMH0.xbtKl33uVx6KaZd-gxxcUeJqslITWX2b_tfhYhzQDjE";
 const SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVrdGljaGNwdHBoZWtta2hpYmRlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MjU2NTgwMCwiZXhwIjoyMDg4MTQxODAwfQ.rbPtqYnY38WI5cBJpZ76m6NAT7lV_GsCv_4NKx-RxNA";
 const supabase = {
   async insert(table, data) {
