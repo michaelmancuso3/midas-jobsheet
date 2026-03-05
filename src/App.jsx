@@ -1,8 +1,9 @@
 import { useState } from "react";
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
-const SUPABASE_URL = "https://ektichcptphekmkhibde.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVrdGljaGNwdHBoZWtta2hpYmRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1NjU4MDAsImV4cCI6MjA4ODE0MTgwMH0.xbtKl33uVx6KaZd-gxxcUeJqslITWX2b_tfhYhzQDjE"
+const SUPABASE_URL = "YOUR_SUPABASE_URL";
+const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+
 const supabase = {
   async insert(table, data) {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
@@ -194,7 +195,7 @@ export default function JobSheet() {
     if (!validateSign()) return;
     setSubmitting(true);
     try {
-      await supabase.insert("job_sheets", {
+      const record = {
         client_name: sheet.clientName,
         facility_address: sheet.facilityAddress,
         job_date: sheet.jobDate,
@@ -219,7 +220,6 @@ export default function JobSheet() {
         supervisor_signature: sheet.supervisorSignature,
         lumper_signature: sheet.lumperSignature,
         notes: sheet.notes,
-        // Calculated invoice fields
         base_charge: calc.baseCharge,
         accessorial_charge: calc.accessorials,
         sku_charge: calc.skuCharge,
@@ -230,7 +230,32 @@ export default function JobSheet() {
         total: calc.total,
         invoice_status: "pending",
         created_at: new Date().toISOString(),
+      };
+
+      // Insert into Supabase and get the record back with its id
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/job_sheets`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": SUPABASE_ANON_KEY,
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+          "Prefer": "return=representation",
+        },
+        body: JSON.stringify(record),
       });
+      if (!res.ok) throw new Error(await res.text());
+      const [saved] = await res.json();
+
+      // Call Edge Function directly to send invoice
+      await fetch(`${SUPABASE_URL}/functions/v1/send-invoice`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ record: saved }),
+      });
+
       setStep(3);
     } catch (err) {
       alert("Submission failed: " + err.message);
