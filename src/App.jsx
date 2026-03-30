@@ -1,9 +1,8 @@
 import { useState } from "react";
-import React from "react";
 
+// ── CONFIG ────────────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://ektichcptphekmkhibde.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVrdGljaGNwdHBoZWtta2hpYmRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1NjU4MDAsImV4cCI6MjA4ODE0MTgwMH0.xbtKl33uVx6KaZd-gxxcUeJqslITWX2b_tfhYhzQDjE";
-const SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVrdGljaGNwdHBoZWtta2hpYmRlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MjU2NTgwMCwiZXhwIjoyMDg4MTQxODAwfQ.rbPtqYnY38WI5cBJpZ76m6NAT7lV_GsCv_4NKx-RxNA";
 
 const supabase = {
   async insert(table, data) {
@@ -61,7 +60,17 @@ function calcInvoice(sheet) {
   const hst = Math.round(subtotal * 0.13 * 100) / 100;
   const total = Math.round((subtotal + hst) * 100) / 100;
 
-  return { base, baseCharge, accessorials, skuCharge, waitCharge, cancelCharge, subtotal, hst, total, pieces };
+  // Build accessorial list for invoice email
+  const accessorialList = [];
+  if (sheet.loadType === "highcube_tipped_mixed") accessorialList.push("Highcube / Tipped / Mixed load (+$80)");
+  if (sheet.loadType === "fully_tipped_mixed") accessorialList.push("Fully Tipped / Mixed load (+$100)");
+  if (sheet.productWeight === "heavy") accessorialList.push("Heavy product 45lbs+ (+$80)");
+  if (sheet.productWeight === "super_heavy") accessorialList.push("Super Heavy 100lbs+ (+$110)");
+  if (extraSKUs > 0) accessorialList.push(`Extra SKUs: ${extraSKUs} × $15`);
+  if (sheet.isWeekend === "yes") accessorialList.push("Weekend / Holiday rate (1.5×)");
+  if (sheet.wasCancelled === "yes") accessorialList.push("Same-day cancellation fee ($120)");
+
+  return { base, baseCharge, accessorials, skuCharge, waitCharge, cancelCharge, subtotal, hst, total, pieces, accessorialList, waitHours: billableWaitHrs };
 }
 
 // ── STYLES ────────────────────────────────────────────────────────────────────
@@ -136,94 +145,6 @@ function Radio({ label, value, onChange, options }) {
   );
 }
 
-// ── SIGNATURE PAD ─────────────────────────────────────────────────────────────
-function SignaturePad({ onSave, value, error, color }) {
-  const canvasRef = React.useRef(null);
-  const drawing = React.useRef(false);
-  const [signed, setSigned] = React.useState(false);
-
-  const getPos = (e, canvas) => {
-    const rect = canvas.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    return { x: clientX - rect.left, y: clientY - rect.top };
-  };
-
-  const startDraw = (e) => {
-    e.preventDefault();
-    drawing.current = true;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    const pos = getPos(e, canvas);
-    ctx.beginPath();
-    ctx.moveTo(pos.x, pos.y);
-  };
-
-  const draw = (e) => {
-    e.preventDefault();
-    if (!drawing.current) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    ctx.strokeStyle = color || "#c9a84c";
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    const pos = getPos(e, canvas);
-    ctx.lineTo(pos.x, pos.y);
-    ctx.stroke();
-    setSigned(true);
-  };
-
-  const stopDraw = (e) => {
-    e.preventDefault();
-    drawing.current = false;
-    if (signed) {
-      const dataUrl = canvasRef.current.toDataURL("image/png");
-      onSave(dataUrl);
-    }
-  };
-
-  const clear = () => {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setSigned(false);
-    onSave("");
-  };
-
-  return (
-    <div>
-      <div style={{ position: "relative", border: `1.5px solid ${error ? ERROR : signed ? color : BORDER}`, borderRadius: 6, background: "#080706", overflow: "hidden", transition: "border-color 0.15s" }}>
-        <canvas
-          ref={canvasRef}
-          width={560}
-          height={120}
-          style={{ width: "100%", height: 120, display: "block", touchAction: "none" }}
-          onMouseDown={startDraw}
-          onMouseMove={draw}
-          onMouseUp={stopDraw}
-          onMouseLeave={stopDraw}
-          onTouchStart={startDraw}
-          onTouchMove={draw}
-          onTouchEnd={stopDraw}
-        />
-        {!signed && (
-          <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontSize: 12, color: "#2a2820", pointerEvents: "none", whiteSpace: "nowrap" }}>
-            ✍️ Sign here with your finger or mouse
-          </div>
-        )}
-        {signed && (
-          <button onClick={clear} style={{ position: "absolute", top: 6, right: 6, background: "#1a1814", border: `1px solid ${BORDER}`, borderRadius: 4, color: MUTED, fontSize: 10, padding: "3px 8px", cursor: "pointer" }}>
-            Clear
-          </button>
-        )}
-      </div>
-      {error && <div style={{ color: ERROR, fontSize: 10, marginTop: 3 }}>Signature required</div>}
-      {signed && <div style={{ fontSize: 9, color: "#3a3028", marginTop: 4 }}>Signed electronically · {new Date().toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" })}</div>}
-    </div>
-  );
-}
-
 // ── MAIN COMPONENT ────────────────────────────────────────────────────────────
 export default function JobSheet() {
   const [step, setStep] = useState(0); // 0=form, 1=review, 2=sign, 3=done
@@ -284,7 +205,7 @@ export default function JobSheet() {
     if (!validateSign()) return;
     setSubmitting(true);
     try {
-      const record = {
+      await supabase.insert("job_sheets", {
         client_name: sheet.clientName,
         facility_address: sheet.facilityAddress,
         job_date: sheet.jobDate,
@@ -309,6 +230,7 @@ export default function JobSheet() {
         supervisor_signature: sheet.supervisorSignature,
         lumper_signature: sheet.lumperSignature,
         notes: sheet.notes,
+        // Calculated invoice fields
         base_charge: calc.baseCharge,
         accessorial_charge: calc.accessorials,
         sku_charge: calc.skuCharge,
@@ -319,31 +241,53 @@ export default function JobSheet() {
         total: calc.total,
         invoice_status: "pending",
         created_at: new Date().toISOString(),
-      };
-
-      // Insert into Supabase and get the record back with its id
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/job_sheets`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "apikey": SUPABASE_ANON_KEY,
-          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-          "Prefer": "return=representation",
-        },
-        body: JSON.stringify(record),
       });
-      if (!res.ok) throw new Error(await res.text());
-      const [saved] = await res.json();
 
-      // Call Edge Function to send invoice — non-blocking, won't fail submission
-      fetch(`${SUPABASE_URL}/functions/v1/send-invoice`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
-        },
-        body: JSON.stringify({ record: saved }),
-      }).catch(e => console.error("Invoice email failed:", e));
+      // Look up client billing email by matching company name
+      let clientEmail = "michael@midasindustrialservices.com"; // fallback
+      try {
+        const clientRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/client_accounts?company_name=ilike.*${encodeURIComponent(sheet.clientName.trim())}*&select=email,billing_email&limit=1`,
+          { headers: { "apikey": SUPABASE_ANON_KEY, "Authorization": `Bearer ${SUPABASE_ANON_KEY}` } }
+        );
+        const clients = await clientRes.json();
+        if (clients && clients.length > 0) {
+          clientEmail = clients[0].billing_email || clients[0].email || clientEmail;
+        }
+      } catch {}
+
+      // Send invoice email
+      try {
+        await fetch(`${SUPABASE_URL}/functions/v1/send-invoice`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": SUPABASE_ANON_KEY,
+            "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({
+            client_email: clientEmail,
+            company_name: sheet.clientName,
+            probill: sheet.probillNumber,
+            container_ref: sheet.containerNumber,
+            location: sheet.facilityAddress,
+            job_date: sheet.jobDate,
+            piece_count: parseInt(sheet.pieceCount) || 0,
+            sku_count: parseInt(sheet.skuCount) || 0,
+            base_rate: calc.baseCharge,
+            accessorials: calc.accessorialList || [],
+            accessorial_total: calc.accessorials,
+            wait_time_hours: calc.waitHours || 0,
+            wait_time_lumpers: parseInt(sheet.lumperCount) || 2,
+            wait_time_charge: calc.waitCharge,
+            subtotal: calc.subtotal,
+            hst: calc.hst,
+            total: calc.total,
+            supervisor_name: sheet.supervisorName,
+            notes: sheet.notes,
+          }),
+        });
+      } catch {}
 
       setStep(3);
     } catch (err) {
@@ -551,24 +495,22 @@ export default function JobSheet() {
             </div>
             <Input label="Client Supervisor Name" value={sheet.supervisorName} onChange={set("supervisorName")} required err={errors.supervisorName} placeholder="Jane Smith" />
             <Field label="Client Supervisor Signature *">
-              <SignaturePad
-                onSave={(dataUrl) => set("supervisorSignature")(dataUrl)}
-                value={sheet.supervisorSignature}
-                error={errors.supervisorSignature}
-                color={GOLD}
-              />
+              <input value={sheet.supervisorSignature} onChange={e => set("supervisorSignature")(e.target.value)}
+                placeholder="Type full legal name to sign electronically"
+                style={{ ...inp(errors.supervisorSignature), fontSize: 16, fontFamily: "'Barlow Condensed', sans-serif", color: GOLD, letterSpacing: "0.02em" }} />
+              {errors.supervisorSignature && <div style={{ color: ERROR, fontSize: 10, marginTop: 3 }}>Required</div>}
+              {sheet.supervisorSignature && <div style={{ fontSize: 9, color: "#3a3028", marginTop: 4 }}>Signed electronically · {new Date().toLocaleDateString("en-CA", { year:"numeric", month:"long", day:"numeric" })}</div>}
             </Field>
           </div>
 
           <div style={section}>
             <div style={sectionTitle}>✍️ LUMPER LEAD SIGN OFF</div>
             <Field label="Lead Lumper Signature *">
-              <SignaturePad
-                onSave={(dataUrl) => set("lumperSignature")(dataUrl)}
-                value={sheet.lumperSignature}
-                error={errors.lumperSignature}
-                color="#4a9eff"
-              />
+              <input value={sheet.lumperSignature} onChange={e => set("lumperSignature")(e.target.value)}
+                placeholder="Type full legal name to sign electronically"
+                style={{ ...inp(errors.lumperSignature), fontSize: 16, fontFamily: "'Barlow Condensed', sans-serif", color: GOLD, letterSpacing: "0.02em" }} />
+              {errors.lumperSignature && <div style={{ color: ERROR, fontSize: 10, marginTop: 3 }}>Required</div>}
+              {sheet.lumperSignature && <div style={{ fontSize: 9, color: "#3a3028", marginTop: 4 }}>Signed electronically · {new Date().toLocaleDateString("en-CA", { year:"numeric", month:"long", day:"numeric" })}</div>}
             </Field>
           </div>
 
