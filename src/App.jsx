@@ -256,9 +256,9 @@ export default function JobSheet() {
         }
       } catch {}
 
-      // Send invoice email
+      // Send invoice email — then update invoice_status to "sent"
       try {
-        await fetch(`${SUPABASE_URL}/functions/v1/send-invoice`, {
+        const invoiceRes = await fetch(`${SUPABASE_URL}/functions/v1/send-invoice`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -287,6 +287,29 @@ export default function JobSheet() {
             notes: sheet.notes,
           }),
         });
+        // If invoice sent successfully, update status in job_sheets
+        if (invoiceRes.ok) {
+          const latestJob = await fetch(
+            `${SUPABASE_URL}/rest/v1/job_sheets?client_name=ilike.*${encodeURIComponent(sheet.clientName.trim())}*&container_number=eq.${encodeURIComponent(sheet.containerNumber)}&order=created_at.desc&limit=1&select=id`,
+            { headers: { "apikey": SUPABASE_ANON_KEY, "Authorization": `Bearer ${SUPABASE_ANON_KEY}` } }
+          );
+          const jobs = await latestJob.json();
+          if (jobs && jobs.length > 0) {
+            await fetch(`${SUPABASE_URL}/rest/v1/job_sheets?id=eq.${jobs[0].id}`, {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                "apikey": SUPABASE_ANON_KEY,
+                "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+                "Prefer": "return=minimal",
+              },
+              body: JSON.stringify({
+                invoice_status: "sent",
+                invoiced_at: new Date().toISOString(),
+              }),
+            });
+          }
+        }
       } catch {}
 
       setStep(3);
