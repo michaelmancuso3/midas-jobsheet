@@ -417,6 +417,24 @@ export default function JobSheet() {
         }
       } catch {}
 
+      // Mark the container forecast as completed so the SMS webhook
+      // doesn't pick it up again when workers reply YES to future shifts
+      try {
+        await fetch(
+          `${SUPABASE_URL}/rest/v1/container_forecasts?container_number=eq.${encodeURIComponent(sheet.containerNumber)}&status=eq.pending`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              "apikey": SUPABASE_ANON_KEY,
+              "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+              "Prefer": "return=minimal",
+            },
+            body: JSON.stringify({ status: "completed" }),
+          }
+        );
+      } catch {}
+
       setStep(3);
     } catch (err) {
       alert("Submission failed: " + err.message);
