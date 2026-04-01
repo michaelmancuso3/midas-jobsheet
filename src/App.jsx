@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://ektichcptphekmkhibde.supabase.co";
@@ -146,6 +146,111 @@ function Radio({ label, value, onChange, options }) {
 }
 
 // ── MAIN COMPONENT ────────────────────────────────────────────────────────────
+
+// ── SIGNATURE PAD ─────────────────────────────────────────────────────────────
+function SignaturePad({ value, onChange, error, label }) {
+  const canvasRef = useRef(null);
+  const [drawing, setDrawing] = useState(false);
+  const [hasSignature, setHasSignature] = useState(false);
+  const lastPos = useRef(null);
+
+  const getPos = (e, canvas) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    if (e.touches) {
+      return {
+        x: (e.touches[0].clientX - rect.left) * scaleX,
+        y: (e.touches[0].clientY - rect.top) * scaleY,
+      };
+    }
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    };
+  };
+
+  const startDraw = (e) => {
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    const pos = getPos(e, canvas);
+    setDrawing(true);
+    lastPos.current = pos;
+    const ctx = canvas.getContext("2d");
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = "#C9A84C";
+    ctx.fill();
+  };
+
+  const draw = (e) => {
+    if (!drawing) return;
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    const pos = getPos(e, canvas);
+    ctx.beginPath();
+    ctx.moveTo(lastPos.current.x, lastPos.current.y);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.strokeStyle = "#C9A84C";
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.stroke();
+    lastPos.current = pos;
+    setHasSignature(true);
+    onChange(canvas.toDataURL("image/png"));
+  };
+
+  const stopDraw = (e) => {
+    if (!drawing) return;
+    e.preventDefault();
+    setDrawing(false);
+    lastPos.current = null;
+  };
+
+  const clear = () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setHasSignature(false);
+    onChange("");
+  };
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#5a5040", letterSpacing: "0.12em", marginBottom: 6, textTransform: "uppercase" }}>{label} *</div>
+      <div style={{ position: "relative", border: `1px solid ${error ? "#f87171" : hasSignature ? "#C9A84C" : "#1e1c18"}`, borderRadius: 6, background: "#060504", overflow: "hidden", transition: "border-color 0.2s" }}>
+        <canvas
+          ref={canvasRef}
+          width={600}
+          height={150}
+          style={{ width: "100%", height: 150, display: "block", touchAction: "none", cursor: "crosshair" }}
+          onMouseDown={startDraw}
+          onMouseMove={draw}
+          onMouseUp={stopDraw}
+          onMouseLeave={stopDraw}
+          onTouchStart={startDraw}
+          onTouchMove={draw}
+          onTouchEnd={stopDraw}
+        />
+        {!hasSignature && (
+          <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", pointerEvents: "none", color: "#2a2218", fontSize: 12, fontFamily: "\'Barlow\',sans-serif", textAlign: "center" }}>
+            Sign here with your finger or mouse
+          </div>
+        )}
+        {hasSignature && (
+          <button onClick={clear} style={{ position: "absolute", top: 8, right: 8, background: "#1a1814", border: "1px solid #2a2218", color: "#5a5040", borderRadius: 4, padding: "3px 8px", fontSize: 10, cursor: "pointer", fontFamily: "\'Barlow\',sans-serif", fontWeight: 700, letterSpacing: "0.08em" }}>
+            CLEAR
+          </button>
+        )}
+      </div>
+      {error && <div style={{ color: "#f87171", fontSize: 10, marginTop: 3 }}>Required</div>}
+      {hasSignature && <div style={{ fontSize: 9, color: "#3a3028", marginTop: 4 }}>Signed · {new Date().toLocaleDateString("en-CA", { year:"numeric", month:"long", day:"numeric" })}</div>}
+    </div>
+  );
+}
+
 export default function JobSheet() {
   const [step, setStep] = useState(0); // 0=form, 1=review, 2=sign, 3=done
   const [submitting, setSubmitting] = useState(false);
@@ -517,24 +622,22 @@ export default function JobSheet() {
               By signing below, the client supervisor confirms the piece count of <strong style={{ color: GOLD }}>{sheet.pieceCount} pieces</strong> for container <strong style={{ color: GOLD }}>{sheet.containerNumber}</strong> and authorizes billing of <strong style={{ color: GOLD }}>${calc.total.toFixed(2)}</strong>.
             </div>
             <Input label="Client Supervisor Name" value={sheet.supervisorName} onChange={set("supervisorName")} required err={errors.supervisorName} placeholder="Jane Smith" />
-            <Field label="Client Supervisor Signature *">
-              <input value={sheet.supervisorSignature} onChange={e => set("supervisorSignature")(e.target.value)}
-                placeholder="Type full legal name to sign electronically"
-                style={{ ...inp(errors.supervisorSignature), fontSize: 16, fontFamily: "'Barlow Condensed', sans-serif", color: GOLD, letterSpacing: "0.02em" }} />
-              {errors.supervisorSignature && <div style={{ color: ERROR, fontSize: 10, marginTop: 3 }}>Required</div>}
-              {sheet.supervisorSignature && <div style={{ fontSize: 9, color: "#3a3028", marginTop: 4 }}>Signed electronically · {new Date().toLocaleDateString("en-CA", { year:"numeric", month:"long", day:"numeric" })}</div>}
-            </Field>
+            <SignaturePad
+              label="Client Supervisor Signature"
+              value={sheet.supervisorSignature}
+              onChange={val => set("supervisorSignature")(val)}
+              error={errors.supervisorSignature}
+            />
           </div>
 
           <div style={section}>
             <div style={sectionTitle}>✍️ LUMPER LEAD SIGN OFF</div>
-            <Field label="Lead Lumper Signature *">
-              <input value={sheet.lumperSignature} onChange={e => set("lumperSignature")(e.target.value)}
-                placeholder="Type full legal name to sign electronically"
-                style={{ ...inp(errors.lumperSignature), fontSize: 16, fontFamily: "'Barlow Condensed', sans-serif", color: GOLD, letterSpacing: "0.02em" }} />
-              {errors.lumperSignature && <div style={{ color: ERROR, fontSize: 10, marginTop: 3 }}>Required</div>}
-              {sheet.lumperSignature && <div style={{ fontSize: 9, color: "#3a3028", marginTop: 4 }}>Signed electronically · {new Date().toLocaleDateString("en-CA", { year:"numeric", month:"long", day:"numeric" })}</div>}
-            </Field>
+            <SignaturePad
+              label="Lead Lumper Signature"
+              value={sheet.lumperSignature}
+              onChange={val => set("lumperSignature")(val)}
+              error={errors.lumperSignature}
+            />
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
