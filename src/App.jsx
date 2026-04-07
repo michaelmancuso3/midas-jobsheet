@@ -25,15 +25,15 @@ const supabase = {
 function calcInvoice(sheet) {
   const pieces = parseInt(sheet.pieceCount) || 0;
   let base = 0;
-  if      (pieces <= 1699)  base = 185;
-  else if (pieces <= 1849)  base = 207;
-  else if (pieces <= 2499)  base = 229;
-  else if (pieces <= 3499)  base = 246;
-  else if (pieces <= 4999)  base = 282;
-  else if (pieces <= 6499)  base = 396;
-  else if (pieces <= 7999)  base = 462;
-  else if (pieces <= 8999)  base = 546;
-  else                       base = 634;
+  if      (pieces <= 1699)  base = 210;
+  else if (pieces <= 1849)  base = 235;
+  else if (pieces <= 2499)  base = 260;
+  else if (pieces <= 3499)  base = 280;
+  else if (pieces <= 4999)  base = 320;
+  else if (pieces <= 6499)  base = 450;
+  else if (pieces <= 7999)  base = 525;
+  else if (pieces <= 8999)  base = 620;
+  else                       base = 720;
 
   const isWeekend = sheet.isWeekend === "yes";
   const baseCharge = isWeekend ? base * 1.5 : base;
