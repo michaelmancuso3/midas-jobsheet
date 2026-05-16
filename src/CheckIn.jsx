@@ -213,6 +213,9 @@ function ContainerPicker({ lead, onSelect, onSignOut }) {
     for (const f of forecasts) {
       const d = parseJobDate(f.job_date);
       const b = dayBucket(d, today);
+      // Hide past-dated forecasts — they're stale pending records and not
+      // jobs Mikey needs to check anyone in for. Today + future + OTHER only.
+      if (b.order < 0) continue;
       if (!map.has(b.key)) map.set(b.key, { ...b, items: [] });
       map.get(b.key).items.push(f);
     }
