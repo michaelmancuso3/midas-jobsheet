@@ -256,6 +256,11 @@ export default function JobSheet() {
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
 
+  // Check-in prefill state
+  const [checkinForecastId, setCheckinForecastId] = useState(null);
+  const [checkinSummary, setCheckinSummary] = useState(null); // { lumpers: [...], openCount, earliest, latest }
+  const [lastPrefilledForecastId, setLastPrefilledForecastId] = useState(null);
+
   const [sheet, setSheet] = useState({
     // Job info
     clientName: "", facilityAddress: "", jobDate: new Date().toISOString().split("T")[0],
@@ -277,6 +282,77 @@ export default function JobSheet() {
     supervisorName: "", supervisorSignature: "", lumperSignature: "",
     notes: "",
   });
+
+  // Look up check-in punches when container_number is entered. Pre-fills
+  // crew times + lumper info from the live check-in/out data so Mikey
+  // doesn't have to re-type what /checkin already captured.
+  useEffect(() => {
+    const raw = (sheet.containerNumber || "").trim().toUpperCase();
+    if (raw.length < 4) {
+      setCheckinForecastId(null);
+      setCheckinSummary(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const fHeaders = { "apikey": SUPABASE_ANON_KEY, "Authorization": `Bearer ${SUPABASE_ANON_KEY}` };
+        const fcRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/container_forecasts?container_number=eq.${encodeURIComponent(raw)}&status=eq.pending&select=id,company_name,location,job_date&limit=1`,
+          { headers: fHeaders }
+        );
+        const fc = await fcRes.json();
+        if (!fc || fc.length === 0) {
+          setCheckinForecastId(null);
+          setCheckinSummary(null);
+          return;
+        }
+        const forecast = fc[0];
+
+        const pRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/lumper_time_punches?forecast_id=eq.${forecast.id}&select=checked_in_at,checked_out_at,lumpers(full_name)&order=checked_in_at.asc`,
+          { headers: fHeaders }
+        );
+        const punches = await pRes.json();
+        if (!Array.isArray(punches) || punches.length === 0) {
+          setCheckinForecastId(forecast.id);
+          setCheckinSummary({ lumpers: [], openCount: 0 });
+          return;
+        }
+
+        const starts = punches.map(p => new Date(p.checked_in_at).getTime());
+        const ends   = punches.map(p => p.checked_out_at ? new Date(p.checked_out_at).getTime() : Date.now());
+        const earliest = new Date(Math.min(...starts));
+        const latest   = new Date(Math.max(...ends));
+        const openCount = punches.filter(p => !p.checked_out_at).length;
+        const names    = [...new Set(punches.map(p => p.lumpers?.full_name).filter(Boolean))];
+        const toHHMM = (d) => `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+
+        // Only auto-prefill once per forecast (lets Mikey edit afterwards
+        // without us clobbering his edits on every keystroke).
+        if (forecast.id !== lastPrefilledForecastId) {
+          setSheet(prev => ({
+            ...prev,
+            crewStartTime: toHHMM(earliest),
+            crewEndTime:   toHHMM(latest),
+            lumperCount:   String(Math.max(1, Math.min(5, names.length))),
+            lumperNames:   names.join(", "),
+            clientName:      prev.clientName      || forecast.company_name || "",
+            facilityAddress: prev.facilityAddress || forecast.location     || "",
+            jobDate:         forecast.job_date    || prev.jobDate,
+          }));
+          setLastPrefilledForecastId(forecast.id);
+        }
+
+        setCheckinForecastId(forecast.id);
+        setCheckinSummary({ lumpers: names, openCount, earliest, latest });
+      } catch {
+        // Silent: user can still fill the form manually.
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [sheet.containerNumber, lastPrefilledForecastId]);
 
   const set = (k) => (v) => setSheet(prev => ({ ...prev, [k]: v }));
 
@@ -417,6 +493,28 @@ export default function JobSheet() {
         }
       } catch {}
 
+      // Close out the check-in/check-out punches for this container.
+      // Any lumper still checked in is auto-stamped at the entered crew
+      // end time (clamped to >= their check-in). Hours flow to payroll
+      // via the container_hours_from_punches view.
+      if (checkinForecastId && sheet.crewEndTime) {
+        try {
+          const containerEndIso = new Date(`${sheet.jobDate}T${sheet.crewEndTime}:00`).toISOString();
+          await fetch(`${SUPABASE_URL}/rest/v1/rpc/close_container_punches`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "apikey": SUPABASE_ANON_KEY,
+              "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+            },
+            body: JSON.stringify({
+              p_forecast_id: checkinForecastId,
+              p_container_end_at: containerEndIso,
+            }),
+          });
+        } catch {}
+      }
+
       // Mark the container forecast as completed so the SMS webhook
       // doesn't pick it up again when workers reply YES to future shifts
       try {
@@ -486,6 +584,30 @@ export default function JobSheet() {
 
         {/* ── STEP 0: JOB INFO ── */}
         {step === 0 && <>
+
+          {/* Banner when check-in data is detected for this container */}
+          {checkinSummary && checkinSummary.lumpers.length > 0 && (
+            <div style={{
+              background: "#0a1a0a", border: `1px solid #22c55e40`, borderRadius: 8,
+              padding: 14, marginBottom: 16,
+            }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: "#22c55e", letterSpacing: "0.2em", marginBottom: 6 }}>
+                ✓ CHECK-IN DATA FOUND
+              </div>
+              <div style={{ fontSize: 12, color: TEXT, lineHeight: 1.5 }}>
+                Crew times and lumper info are pre-filled from the live punches. You can still edit any field — your changes win.
+              </div>
+              <div style={{ fontSize: 11, color: MUTED, marginTop: 8 }}>
+                <strong style={{ color: GOLD }}>{checkinSummary.lumpers.length}</strong> lumper{checkinSummary.lumpers.length === 1 ? "" : "s"}: {checkinSummary.lumpers.join(", ")}
+              </div>
+              {checkinSummary.openCount > 0 && (
+                <div style={{ fontSize: 11, color: "#fbbf24", marginTop: 8, lineHeight: 1.5 }}>
+                  ⚠ {checkinSummary.openCount} lumper{checkinSummary.openCount === 1 ? " is" : "s are"} still checked in. On submit, they'll be auto-stamped at the Crew End Time you enter.
+                </div>
+              )}
+            </div>
+          )}
+
           <div style={section}>
             <div style={sectionTitle}>📋 JOB INFORMATION</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
