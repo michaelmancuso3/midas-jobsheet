@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://ektichcptphekmkhibde.supabase.co";
@@ -158,6 +158,30 @@ function PinScreen({ onAuthenticated }) {
 }
 
 // ── SCREEN 2: CONTAINER PICKER ────────────────────────────────────────────────
+
+// job_date is a TEXT column (portal writes YYYY-MM-DD, SMS uses MM.DD.YYYY).
+// Parse YYYY-MM-DD as a local-midnight Date so timezone shifting doesn't
+// flip the day. Anything else falls into the "OTHER" bucket.
+function parseJobDate(raw) {
+  if (!raw) return null;
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(String(raw).trim());
+  if (!m) return null;
+  return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+}
+
+const DOW   = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function dayBucket(date, today) {
+  if (!date) return { key: "OTHER", label: "OTHER · DATE UNKNOWN", order: 99999 };
+  const diff = Math.round((date - today) / 86400000);
+  const dateStr = `${MONTH[date.getMonth()]} ${date.getDate()}`;
+  if (diff === 0) return { key: `D-${date.getTime()}`, label: `TODAY · ${dateStr}`,    order: 0 };
+  if (diff === 1) return { key: `D-${date.getTime()}`, label: `TOMORROW · ${dateStr}`, order: 1 };
+  if (diff <  0)  return { key: `D-${date.getTime()}`, label: `PAST · ${dateStr}`,     order: -10000 + diff };
+  return            { key: `D-${date.getTime()}`, label: `${DOW[date.getDay()]} · ${dateStr}`, order: diff };
+}
+
 function ContainerPicker({ lead, onSelect, onSignOut }) {
   const [forecasts, setForecasts] = useState(null);
   const [error, setError] = useState("");
@@ -167,7 +191,7 @@ function ContainerPicker({ lead, onSelect, onSignOut }) {
     (async () => {
       try {
         const data = await sbGet(
-          "container_forecasts?status=eq.pending&order=created_at.desc&select=id,container_number,account_name,customer_notes,created_at&limit=25"
+          "container_forecasts?status=eq.pending&order=job_date.asc.nullslast,created_at.asc&select=id,container_number,account_name,customer_notes,created_at,job_date&limit=50"
         );
         if (!cancelled) setForecasts(data);
       } catch (e) {
@@ -177,46 +201,74 @@ function ContainerPicker({ lead, onSelect, onSignOut }) {
     return () => { cancelled = true; };
   }, []);
 
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
+  const grouped = useMemo(() => {
+    if (!forecasts) return null;
+    const map = new Map();
+    for (const f of forecasts) {
+      const d = parseJobDate(f.job_date);
+      const b = dayBucket(d, today);
+      if (!map.has(b.key)) map.set(b.key, { ...b, items: [] });
+      map.get(b.key).items.push(f);
+    }
+    return Array.from(map.values()).sort((a, b) => a.order - b.order);
+  }, [forecasts, today]);
+
   return (
     <Shell lead={lead} onSignOut={onSignOut}>
       <div style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 16, fontWeight: 800, color: TEXT, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.04em" }}>PICK A CONTAINER</div>
-        <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>Open container forecasts. Tap one to start checking lumpers in.</div>
+        <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>Grouped by job date. Tap one to start checking lumpers in.</div>
       </div>
 
       {error && <div style={{ color: ERROR, fontSize: 12, marginBottom: 12 }}>{error}</div>}
 
-      {forecasts === null && <div style={{ color: MUTED, fontSize: 12 }}>Loading…</div>}
+      {grouped === null && <div style={{ color: MUTED, fontSize: 12 }}>Loading…</div>}
 
-      {forecasts !== null && forecasts.length === 0 && (
+      {grouped !== null && grouped.length === 0 && (
         <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 20, textAlign: "center" }}>
           <div style={{ color: MUTED, fontSize: 12 }}>No active container forecasts. Have the office submit one from the customer portal first.</div>
         </div>
       )}
 
-      {forecasts && forecasts.map((f) => (
-        <button
-          key={f.id}
-          onClick={() => onSelect(f)}
-          style={{
-            display: "block", width: "100%", textAlign: "left",
-            background: CARD, border: `1px solid ${BORDER}`, borderRadius: 10,
-            padding: 16, marginBottom: 10, cursor: "pointer",
-            color: TEXT, fontFamily: "'Barlow', sans-serif",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
-            <div style={{ fontSize: 14, fontWeight: 800, color: GOLD, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.04em" }}>
-              {f.container_number || "(no container #)"}
-            </div>
-            {f.account_name && (
-              <div style={{ fontSize: 10, color: MUTED, letterSpacing: "0.1em", textTransform: "uppercase" }}>{f.account_name}</div>
-            )}
+      {grouped && grouped.map((g) => (
+        <div key={g.key} style={{ marginBottom: 4 }}>
+          <div style={{
+            fontSize: 9, fontWeight: 700, color: GOLD, letterSpacing: "0.2em",
+            marginTop: 16, marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${BORDER}`,
+          }}>
+            {g.label} <span style={{ color: MUTED, marginLeft: 6 }}>({g.items.length})</span>
           </div>
-          {f.customer_notes && (
-            <div style={{ fontSize: 11, color: MUTED, marginTop: 4 }}>{f.customer_notes}</div>
-          )}
-        </button>
+          {g.items.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => onSelect(f)}
+              style={{
+                display: "block", width: "100%", textAlign: "left",
+                background: CARD, border: `1px solid ${BORDER}`, borderRadius: 10,
+                padding: 16, marginBottom: 10, cursor: "pointer",
+                color: TEXT, fontFamily: "'Barlow', sans-serif",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: GOLD, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.04em" }}>
+                  {f.container_number || "(no container #)"}
+                </div>
+                {f.account_name && (
+                  <div style={{ fontSize: 10, color: MUTED, letterSpacing: "0.1em", textTransform: "uppercase" }}>{f.account_name}</div>
+                )}
+              </div>
+              {f.customer_notes && (
+                <div style={{ fontSize: 11, color: MUTED, marginTop: 4 }}>{f.customer_notes}</div>
+              )}
+            </button>
+          ))}
+        </div>
       ))}
     </Shell>
   );
