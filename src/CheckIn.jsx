@@ -407,56 +407,84 @@ function RosterScreen({ lead, forecast, onBack, onSignOut }) {
         </div>
       )}
 
-      {/* Roster */}
-      <div style={{ fontSize: 9, fontWeight: 700, color: GOLD, letterSpacing: "0.2em", marginBottom: 8, marginTop: 4 }}>
-        ROSTER
-      </div>
-
       {lumpers === null && <div style={{ color: MUTED, fontSize: 12 }}>Loading…</div>}
 
-      {lumpers && lumpers.map((l) => {
-        const inHere = isCheckedIn(l.id);
-        const isPending = pendingId === l.id;
-        return (
-          <button
-            key={l.id}
-            onClick={() => handleToggle(l)}
-            disabled={isPending}
-            style={{
-              display: "block", width: "100%", textAlign: "left",
-              background: inHere ? "#22c55e10" : CARD,
-              border: `1px solid ${inHere ? "#22c55e40" : BORDER}`,
-              borderRadius: 10, padding: 14, marginBottom: 8,
-              cursor: isPending ? "wait" : "pointer", color: TEXT,
-              fontFamily: "'Barlow', sans-serif",
-              opacity: isPending ? 0.6 : 1,
-              transition: "all 0.15s",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: TEXT }}>
-                  {l.full_name}
-                  {l.is_lead && <span style={{ fontSize: 9, color: GOLD, letterSpacing: "0.1em", marginLeft: 8 }}>LEAD</span>}
-                </div>
-                {inHere && (
-                  <div style={{ fontSize: 10, color: SUCCESS, marginTop: 2 }}>
-                    IN · {fmtMinutes(inHere.minutes_in)}
+      {lumpers && (() => {
+        // Split roster into employees vs Arrow temps so the lead can see
+        // them as distinct pools (employees are payroll, temps are agency).
+        // Temps are detected by name prefix "Arrow Temp".
+        const isTemp = (l) => /^arrow temp/i.test(l.full_name || "");
+        const employees = lumpers.filter((l) => !isTemp(l));
+        const temps     = lumpers.filter(isTemp).sort((a, b) => {
+          const na = parseInt((a.full_name.match(/\d+/) || [0])[0], 10);
+          const nb = parseInt((b.full_name.match(/\d+/) || [0])[0], 10);
+          return na - nb;
+        });
+
+        const renderCard = (l) => {
+          const inHere = isCheckedIn(l.id);
+          const isPending = pendingId === l.id;
+          const temp = isTemp(l);
+          return (
+            <button
+              key={l.id}
+              onClick={() => handleToggle(l)}
+              disabled={isPending}
+              style={{
+                display: "block", width: "100%", textAlign: "left",
+                background: inHere ? "#22c55e10" : (temp ? "#0c0a06" : CARD),
+                border: `1px solid ${inHere ? "#22c55e40" : (temp ? "#3a2f1a" : BORDER)}`,
+                borderRadius: 10, padding: 14, marginBottom: 8,
+                cursor: isPending ? "wait" : "pointer", color: TEXT,
+                fontFamily: "'Barlow', sans-serif",
+                opacity: isPending ? 0.6 : 1,
+                transition: "all 0.15s",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: TEXT }}>
+                    {l.full_name}
+                    {l.is_lead && <span style={{ fontSize: 9, color: GOLD, letterSpacing: "0.1em", marginLeft: 8 }}>LEAD</span>}
+                    {temp && <span style={{ fontSize: 9, color: MUTED, letterSpacing: "0.1em", marginLeft: 8 }}>AGENCY</span>}
                   </div>
-                )}
+                  {inHere && (
+                    <div style={{ fontSize: 10, color: SUCCESS, marginTop: 2 }}>
+                      IN · {fmtMinutes(inHere.minutes_in)}
+                    </div>
+                  )}
+                </div>
+                <div style={{
+                  fontSize: 10, fontWeight: 800, letterSpacing: "0.12em",
+                  padding: "6px 12px", borderRadius: 4,
+                  background: inHere ? ERROR : GOLD,
+                  color: inHere ? "#fff" : "#050402",
+                }}>
+                  {inHere ? "CHECK OUT" : "CHECK IN"}
+                </div>
               </div>
-              <div style={{
-                fontSize: 10, fontWeight: 800, letterSpacing: "0.12em",
-                padding: "6px 12px", borderRadius: 4,
-                background: inHere ? ERROR : GOLD,
-                color: inHere ? "#fff" : "#050402",
-              }}>
-                {inHere ? "CHECK OUT" : "CHECK IN"}
-              </div>
+            </button>
+          );
+        };
+
+        return (
+          <>
+            <div style={{ fontSize: 9, fontWeight: 700, color: GOLD, letterSpacing: "0.2em", marginBottom: 8, marginTop: 4 }}>
+              EMPLOYEES <span style={{ color: MUTED, marginLeft: 6 }}>({employees.length})</span>
             </div>
-          </button>
+            {employees.map(renderCard)}
+
+            {temps.length > 0 && (
+              <>
+                <div style={{ fontSize: 9, fontWeight: 700, color: GOLD, letterSpacing: "0.2em", marginBottom: 8, marginTop: 16 }}>
+                  ARROW TEMPS <span style={{ color: MUTED, marginLeft: 6 }}>({temps.length})</span>
+                </div>
+                {temps.map(renderCard)}
+              </>
+            )}
+          </>
         );
-      })}
+      })()}
 
       <div style={{ marginTop: 24, fontSize: 10, color: MUTED, textAlign: "center", lineHeight: 1.6 }}>
         Hours are calculated from check-in to check-out and feed payroll automatically.<br />
