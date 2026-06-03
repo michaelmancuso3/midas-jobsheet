@@ -67,8 +67,9 @@ function Shell({ name, children }) {
 // ── MAIN ──────────────────────────────────────────────────────────────────────
 export default function Done() {
   const who = (new URLSearchParams(window.location.search).get("who") || "").toLowerCase().trim();
-  const valid = who === "sean" || who === "nick";
-  const name = who === "sean" ? "Sean" : who === "nick" ? "Nick" : "";
+  const NAMES = { sean: "Sean", nick: "Nick", ben: "Ben" };
+  const valid = who in NAMES;
+  const name = NAMES[who] || "";
   const today = useMemo(() => todayISO(), []);
 
   const [rows, setRows] = useState(null);
@@ -106,7 +107,7 @@ export default function Done() {
         <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 24, marginTop: 40, textAlign: "center" }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: TEXT, marginBottom: 8 }}>Wrong link</div>
           <div style={{ fontSize: 12, color: MUTED, lineHeight: 1.6 }}>
-            Use your personal link. It should end in <span style={{ color: GOLD }}>?who=sean</span> or <span style={{ color: GOLD }}>?who=nick</span>. Text Michael if you don't have it.
+            Use your personal link. It should end in <span style={{ color: GOLD }}>?who=sean</span>, <span style={{ color: GOLD }}>?who=nick</span>, or <span style={{ color: GOLD }}>?who=ben</span>. Text Michael if you don't have it.
           </div>
         </div>
       </Shell>
