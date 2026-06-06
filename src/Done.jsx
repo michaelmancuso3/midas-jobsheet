@@ -19,6 +19,11 @@ async function sbGet(path) {
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
+async function sbFn(name, body) {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, { method: "POST", headers: sbHeaders, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
 
 // ── STYLES ────────────────────────────────────────────────────────────────────
 const GOLD = "#c9a84c", BG = "#050402", CARD = "#0a0906", BORDER = "#1a1814";
@@ -75,6 +80,8 @@ export default function Done() {
   const [rows, setRows] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [err, setErr] = useState("");
+  const [openId, setOpenId] = useState(null); // which can's finish form is open
+  const [form, setForm] = useState({});
 
   const load = useCallback(async () => {
     if (!valid) return;
@@ -91,21 +98,44 @@ export default function Done() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { const t = setInterval(load, 60000); return () => clearInterval(t); }, [load]);
 
-  const markDone = async (id) => {
-    setBusyId(id); setErr("");
-    try { await sbRpc("set_assignment_completed", { p_assignment_id: id }); await load(); }
-    catch { setErr("Couldn't mark that done. Try again."); }
-    finally { setBusyId(null); }
-  };
-
-  // Sean tags who actually worked the can (drives payroll)
-  const setWorker = async (id, whoName) => {
-    setBusyId(id); setErr("");
-    try { await sbRpc("set_worked_by", { p_assignment_id: id, p_who: whoName }); await load(); }
-    catch { setErr("Couldn't set who worked it. Try again."); }
-    finally { setBusyId(null); }
-  };
   const CREW = ["Sean", "Nick", "Ben"];
+  const LOADS = [["standard", "Standard"], ["highcube_tipped_mixed", "Highcube / Tipped / Mixed"], ["fully_tipped_mixed", "Fully Tipped / Mixed"]];
+  const WEIGHTS = [["standard", "Standard"], ["heavy", "Heavy 45lb+"], ["super_heavy", "Super Heavy 100lb+"]];
+
+  const openFinish = (r) => {
+    setErr("");
+    setForm({
+      worked_by: (r.worked_by || "sean").toLowerCase(),
+      piece_count: String(r.piece_count ?? ""),
+      load_type: "standard", product_weight: "standard",
+      sku_count: "", wait_minutes: "", wait_cause: "", was_cancelled: false, notes: "",
+      showExceptions: false,
+    });
+    setOpenId(r.id);
+  };
+  const setF = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+
+  const submitFinish = async (r) => {
+    if (!form.piece_count || parseInt(form.piece_count) <= 0) { setErr("Enter the final piece count."); return; }
+    setBusyId(r.id); setErr("");
+    try {
+      await sbFn("finish-container", {
+        assignment_id: r.id,
+        worked_by: form.worked_by,
+        piece_count: parseInt(form.piece_count) || 0,
+        load_type: form.load_type,
+        product_weight: form.product_weight,
+        sku_count: parseInt(form.sku_count) || 0,
+        wait_minutes: parseInt(form.wait_minutes) || 0,
+        wait_cause: form.wait_cause || null,
+        was_cancelled: !!form.was_cancelled,
+        notes: form.notes || null,
+      });
+      setOpenId(null);
+      await load();
+    } catch { setErr("Couldn't finish that container. Try again."); }
+    finally { setBusyId(null); }
+  };
 
   // hooks must run before any early return — groups uses useMemo internally
   const groups = useMemoGroups(rows);
@@ -174,31 +204,95 @@ export default function Done() {
                     📍 {fc.location}
                   </a>
                 )}
-                {who === "sean" && (
-                  <div style={{ marginBottom: 12 }}>
+                {!done && openId !== r.id && (
+                  <button onClick={() => openFinish(r)}
+                    style={{ display: "block", width: "100%", background: GOLD, color: "#050402",
+                      border: "none", borderRadius: 8, padding: "13px 0", fontWeight: 800, fontSize: 14, letterSpacing: "0.08em",
+                      cursor: "pointer", fontFamily: "'Barlow', sans-serif", marginTop: 4 }}>
+                    FINISH CONTAINER ▸
+                  </button>
+                )}
+                {!done && openId === r.id && (
+                  <div style={{ marginTop: 6, borderTop: `1px solid ${BORDER}`, paddingTop: 12 }}>
                     <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, letterSpacing: "0.12em", marginBottom: 5 }}>WORKED BY</div>
-                    <div style={{ display: "flex", gap: 6 }}>
+                    <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
                       {CREW.map(n => {
-                        const active = (r.worked_by || "sean").toLowerCase() === n.toLowerCase();
+                        const active = form.worked_by === n.toLowerCase();
                         return (
-                          <button key={n} onClick={() => setWorker(r.id, n)} disabled={busy}
+                          <button key={n} onClick={() => setF("worked_by", n.toLowerCase())}
                             style={{ flex: 1, padding: "9px 0", borderRadius: 6, fontSize: 12, fontWeight: 800,
                               border: `1px solid ${active ? GOLD : BORDER}`, background: active ? "#c9a84c22" : "#080706",
-                              color: active ? GOLD : MUTED, cursor: busy ? "wait" : "pointer", fontFamily: "'Barlow', sans-serif" }}>
-                            {n}
-                          </button>
+                              color: active ? GOLD : MUTED, cursor: "pointer", fontFamily: "'Barlow', sans-serif" }}>{n}</button>
                         );
                       })}
                     </div>
+
+                    <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, letterSpacing: "0.12em", marginBottom: 5 }}>FINAL PIECE COUNT</div>
+                    <input type="number" inputMode="numeric" value={form.piece_count} onChange={e => setF("piece_count", e.target.value)}
+                      style={{ width: "100%", boxSizing: "border-box", background: "#080706", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "10px 12px", color: TEXT, fontSize: 14, marginBottom: 12, fontFamily: "'Barlow', sans-serif" }} />
+
+                    <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, letterSpacing: "0.12em", marginBottom: 5 }}>LOAD TYPE</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+                      {LOADS.map(([v, l]) => {
+                        const active = form.load_type === v;
+                        return (
+                          <button key={v} onClick={() => setF("load_type", v)}
+                            style={{ textAlign: "left", padding: "10px 12px", borderRadius: 6, fontSize: 13, fontWeight: 700,
+                              border: `1px solid ${active ? GOLD : BORDER}`, background: active ? "#c9a84c22" : "#080706",
+                              color: active ? GOLD : MUTED, cursor: "pointer", fontFamily: "'Barlow', sans-serif" }}>{l}</button>
+                        );
+                      })}
+                    </div>
+
+                    <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, letterSpacing: "0.12em", marginBottom: 5 }}>PRODUCT WEIGHT</div>
+                    <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                      {WEIGHTS.map(([v, l]) => {
+                        const active = form.product_weight === v;
+                        return (
+                          <button key={v} onClick={() => setF("product_weight", v)}
+                            style={{ flex: 1, padding: "9px 4px", borderRadius: 6, fontSize: 11, fontWeight: 700,
+                              border: `1px solid ${active ? GOLD : BORDER}`, background: active ? "#c9a84c22" : "#080706",
+                              color: active ? GOLD : MUTED, cursor: "pointer", fontFamily: "'Barlow', sans-serif" }}>{l}</button>
+                        );
+                      })}
+                    </div>
+
+                    {!form.showExceptions && (
+                      <button onClick={() => setF("showExceptions", true)}
+                        style={{ background: "transparent", border: "none", color: GOLD, fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0, marginBottom: 12 }}>
+                        + Add SKUs / wait time / cancellation
+                      </button>
+                    )}
+                    {form.showExceptions && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, letterSpacing: "0.12em", marginBottom: 5 }}># SKUs (if over 10)</div>
+                        <input type="number" inputMode="numeric" value={form.sku_count} onChange={e => setF("sku_count", e.target.value)} placeholder="10"
+                          style={{ width: "100%", boxSizing: "border-box", background: "#080706", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "10px 12px", color: TEXT, fontSize: 14, marginBottom: 10, fontFamily: "'Barlow', sans-serif" }} />
+                        <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, letterSpacing: "0.12em", marginBottom: 5 }}>WAIT TIME (minutes)</div>
+                        <input type="number" inputMode="numeric" value={form.wait_minutes} onChange={e => setF("wait_minutes", e.target.value)} placeholder="0"
+                          style={{ width: "100%", boxSizing: "border-box", background: "#080706", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "10px 12px", color: TEXT, fontSize: 14, marginBottom: 10, fontFamily: "'Barlow', sans-serif" }} />
+                        <input type="text" value={form.wait_cause} onChange={e => setF("wait_cause", e.target.value)} placeholder="Cause of wait (optional)"
+                          style={{ width: "100%", boxSizing: "border-box", background: "#080706", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "10px 12px", color: TEXT, fontSize: 13, marginBottom: 10, fontFamily: "'Barlow', sans-serif" }} />
+                        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: TEXT, marginBottom: 10, cursor: "pointer" }}>
+                          <input type="checkbox" checked={!!form.was_cancelled} onChange={e => setF("was_cancelled", e.target.checked)} />
+                          Same-day cancellation
+                        </label>
+                        <input type="text" value={form.notes} onChange={e => setF("notes", e.target.value)} placeholder="Notes (optional)"
+                          style={{ width: "100%", boxSizing: "border-box", background: "#080706", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "10px 12px", color: TEXT, fontSize: 13, fontFamily: "'Barlow', sans-serif" }} />
+                      </div>
+                    )}
+
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={() => setOpenId(null)} disabled={busy}
+                        style={{ flex: 1, background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "13px 0", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "'Barlow', sans-serif" }}>
+                        CANCEL
+                      </button>
+                      <button onClick={() => submitFinish(r)} disabled={busy}
+                        style={{ flex: 2, background: busy ? "#5a4a20" : SUCCESS, color: "#05140a", border: "none", borderRadius: 8, padding: "13px 0", fontWeight: 800, fontSize: 14, letterSpacing: "0.06em", cursor: busy ? "wait" : "pointer", fontFamily: "'Barlow', sans-serif" }}>
+                        {busy ? "SUBMITTING…" : "FINISH & SUBMIT ✓"}
+                      </button>
+                    </div>
                   </div>
-                )}
-                {!done && (
-                  <button onClick={() => markDone(r.id)} disabled={busy}
-                    style={{ display: "block", width: "100%", background: busy ? "#5a4a20" : SUCCESS, color: "#05140a",
-                      border: "none", borderRadius: 8, padding: "13px 0", fontWeight: 800, fontSize: 14, letterSpacing: "0.08em",
-                      cursor: busy ? "wait" : "pointer", fontFamily: "'Barlow', sans-serif", marginTop: 4 }}>
-                    {busy ? "SAVING…" : "MARK DONE ✓"}
-                  </button>
                 )}
                 {done && <div style={{ fontSize: 11, color: SUCCESS, fontWeight: 700, letterSpacing: "0.1em" }}>✓ DONE</div>}
               </div>
