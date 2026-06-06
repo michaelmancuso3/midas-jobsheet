@@ -82,7 +82,7 @@ export default function Done() {
       const data = await sbGet(
         `container_assignments?assignee=eq.${who}&job_date=gte.${today}` +
         `&order=job_date.asc,assigned_pay.desc` +
-        `&select=id,job_date,container_number,piece_count,assigned_pay,completed,confirmed,container_forecasts(location,scheduled_time)`
+        `&select=id,job_date,container_number,piece_count,completed,confirmed,worked_by,container_forecasts(location,scheduled_time)`
       );
       setRows(data);
     } catch { setErr("Couldn't load your jobs — pull to refresh."); }
@@ -97,6 +97,15 @@ export default function Done() {
     catch { setErr("Couldn't mark that done. Try again."); }
     finally { setBusyId(null); }
   };
+
+  // Sean tags who actually worked the can (drives payroll)
+  const setWorker = async (id, whoName) => {
+    setBusyId(id); setErr("");
+    try { await sbRpc("set_worked_by", { p_assignment_id: id, p_who: whoName }); await load(); }
+    catch { setErr("Couldn't set who worked it. Try again."); }
+    finally { setBusyId(null); }
+  };
+  const CREW = ["Sean", "Nick", "Ben"];
 
   // hooks must run before any early return — groups uses useMemo internally
   const groups = useMemoGroups(rows);
@@ -114,8 +123,8 @@ export default function Done() {
     );
   }
 
-  // today's earnings (plain computations)
-  const todayPay = (rows || []).filter(r => r.job_date === today && r.completed).reduce((a, r) => a + Number(r.assigned_pay || 0), 0);
+  // today's counts (no pay shown to crew)
+  const todayTotal = (rows || []).filter(r => r.job_date === today).length;
   const todayOpen = (rows || []).filter(r => r.job_date === today && !r.completed).length;
 
   return (
@@ -123,7 +132,7 @@ export default function Done() {
       {/* earnings band */}
       <div style={{ background: "#0a1a0a", border: `1px solid #22c55e40`, borderRadius: 10, padding: 14, marginBottom: 16 }}>
         <div style={{ fontSize: 9, fontWeight: 700, color: SUCCESS, letterSpacing: "0.18em", marginBottom: 4 }}>TODAY</div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: TEXT }}>{money(todayPay)} <span style={{ fontSize: 12, color: MUTED, fontWeight: 600 }}>earned · {todayOpen} can{todayOpen === 1 ? "" : "s"} left</span></div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: TEXT }}>{todayTotal} can{todayTotal === 1 ? "" : "s"} <span style={{ fontSize: 12, color: MUTED, fontWeight: 600 }}>· {todayOpen} left</span></div>
       </div>
 
       {err && <div style={{ background: "#1a0a0a", border: `1px solid ${ERROR}40`, borderRadius: 6, padding: 10, marginBottom: 12, color: ERROR, fontSize: 12 }}>{err}</div>}
@@ -138,7 +147,7 @@ export default function Done() {
       {groups.map(g => (
         <div key={g.date} style={{ marginBottom: 6 }}>
           <div style={{ fontSize: 9, fontWeight: 700, color: GOLD, letterSpacing: "0.2em", marginTop: 16, marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${BORDER}` }}>
-            {dayLabel(g.date, today)} <span style={{ color: MUTED, marginLeft: 6 }}>· {money(g.pay)}</span>
+            {dayLabel(g.date, today)} <span style={{ color: MUTED, marginLeft: 6 }}>· {g.items.length} can{g.items.length === 1 ? "" : "s"}</span>
           </div>
           {g.items.map(r => {
             const fc = r.container_forecasts || {};
@@ -149,11 +158,10 @@ export default function Done() {
                 border: `1px solid ${done ? "#1a1814" : BORDER}`,
                 borderRadius: 10, padding: 14, marginBottom: 10, opacity: done ? 0.55 : 1,
               }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                <div style={{ marginBottom: 6 }}>
                   <div style={{ fontSize: 15, fontWeight: 800, color: done ? MUTED : GOLD, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.04em", textDecoration: done ? "line-through" : "none" }}>
                     {r.container_number || "(container)"}
                   </div>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: done ? MUTED : TEXT }}>{money(r.assigned_pay)}</div>
                 </div>
                 <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>
                   {cleanTime(fc.scheduled_time) && <span style={{ color: TEXT }}>{cleanTime(fc.scheduled_time)} · </span>}
@@ -162,9 +170,27 @@ export default function Done() {
                 </div>
                 {fc.location && (
                   <a href={mapLink(fc.location)} target="_blank" rel="noreferrer"
-                    style={{ fontSize: 12, color: GOLD, textDecoration: "none", display: "inline-block", marginBottom: done ? 0 : 12 }}>
+                    style={{ fontSize: 12, color: GOLD, textDecoration: "none", display: "block", marginBottom: 12 }}>
                     📍 {fc.location}
                   </a>
+                )}
+                {who === "sean" && (
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, letterSpacing: "0.12em", marginBottom: 5 }}>WORKED BY</div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {CREW.map(n => {
+                        const active = (r.worked_by || "sean").toLowerCase() === n.toLowerCase();
+                        return (
+                          <button key={n} onClick={() => setWorker(r.id, n)} disabled={busy}
+                            style={{ flex: 1, padding: "9px 0", borderRadius: 6, fontSize: 12, fontWeight: 800,
+                              border: `1px solid ${active ? GOLD : BORDER}`, background: active ? "#c9a84c22" : "#080706",
+                              color: active ? GOLD : MUTED, cursor: busy ? "wait" : "pointer", fontFamily: "'Barlow', sans-serif" }}>
+                            {n}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
                 {!done && (
                   <button onClick={() => markDone(r.id)} disabled={busy}
