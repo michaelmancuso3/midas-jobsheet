@@ -44,6 +44,7 @@ function dayLabel(jobDate, today) {
   if (!d) return jobDate;
   const diff = Math.round((d - t) / 86400000);
   const ds = `${MON[d.getMonth()]} ${d.getDate()}`;
+  if (diff < 0) return `⚠ OVERDUE · ${ds}`;
   if (diff === 0) return `TODAY · ${ds}`;
   if (diff === 1) return `TOMORROW · ${ds}`;
   return `${DOW[d.getDay()]} · ${ds}`;
@@ -86,9 +87,11 @@ export default function Done() {
   const load = useCallback(async () => {
     if (!valid) return;
     try {
+      // show every UNFINISHED can (any date — so a missed day never vanishes)
+      // plus everything dated today or later
       const data = await sbGet(
-        `container_assignments?assignee=eq.${who}&job_date=gte.${today}` +
-        `&order=job_date.asc,assigned_pay.desc` +
+        `container_assignments?assignee=eq.${who}&or=(completed.eq.false,job_date.gte.${today})` +
+        `&order=job_date.asc,piece_count.desc` +
         `&select=id,job_date,container_number,piece_count,completed,confirmed,worked_by,container_forecasts(location,scheduled_time)`
       );
       setRows(data);
